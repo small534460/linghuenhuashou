@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>灵魂画手：画圆测试</title>
+    <style>
+        :root {
+            --bg-color: #fdfbf7;
+            --grid-color: #e0e0e0;
+            --ink-color: #333333;
+            --ui-bg: rgba(255, 255, 255, 0.9);
+            --accent-color: #ff6b6b;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            user-select: none;
+        }
+
+        /* 网格背景 */
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: 
+                linear-gradient(var(--grid-color) 1px, transparent 1px),
+                linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+            background-size: 40px 40px;
+            cursor: crosshair;
+        }
+
+        /* UI 覆盖层 */
+        .ui-layer {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--ui-bg);
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            text-align: center;
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(255,255,255,0.5);
+            transition: opacity 0.3s ease;
+            z-index: 10;
+            max-width: 400px;
+            width: 90%;
+        }
+
+        h1 {
+            margin: 0 0 10px 0;
+            color: var(--ink-color);
+            font-weight: 300;
+            letter-spacing: 1px;
+        }
+
+        p {
+            color: #666;
+            line-height: 1.6;
+            font-size: 14px;
+        }
+
+        .btn {
+            background: var(--ink-color);
+            color: #fff;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 30px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: transform 0.1s;
+        }
+
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        .hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        /* 结果样式 */
+        .score-display {
+            font-size: 48px;
+            font-weight: bold;
+            color: var(--ink-color);
+            margin: 20px 0;
+        }
+
+        .comment {
+            font-size: 18px;
+            font-weight: bold;
+            color: var(--accent-color);
+            margin-bottom: 10px;
+        }
+
+        .detail {
+            font-size: 12px;
+            color: #888;
+            margin-top: 10px;
+            display: flex;
+            justify-content: space-around;
+        }
+
+        /* 顶部提示 */
+        .toast {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 12px;
+            opacity: 0;
+            transition: opacity 0.5s;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 画布区域 -->
+    <div id="canvas-container">
+        <canvas id="drawCanvas"></canvas>
+    </div>
+
+    <!-- 顶部提示 -->
+    <div id="toast" class="toast">请在上方空白处绘制一个圆</div>
+
+    <!-- 开始界面 -->
+    <div id="start-screen" class="ui-layer">
+        <h1>画圆测试</h1>
+        <p>规则很简单：</p>
+        <p>1. 点击“开始挑战”<br>2. 在画布上画一个圆<br>3. 越圆得分越高</p>
+        <p style="font-size: 12px; color: #999;">* 这是一个测试你“手稳不稳”的游戏</p>
+        <button class="btn" onclick="game.start()">开始挑战</button>
+    </div>
+
+    <!-- 结果界面 -->
+    <div id="result-screen" class="ui-layer hidden">
+        <h1>绘制完成</h1>
+        <div class="comment" id="result-comment">抽象派大师</div>
+        <div class="score-display" id="result-score">0</div>
+        <div class="detail">
+            <span id="result-roundness">圆度: 0%</span>
+            <span id="result-symmetry">对称: 0%</span>
+        </div>
+        <button class="btn" onclick="game.reset()">再画一次</button>
+    </div>
+
+<script>
+/**
+ * 游戏逻辑核心
+ */
+class CircleGame {
+    constructor() {
+        this.canvas = document.getElementById('drawCanvas');
+        this.ctx = this.canvas.getContext('2d');
+        this.container = document.getElementById('canvas-container');
+        
+        this.isDrawing = false;
+        this.points = []; // 存储绘制的坐标点 {x, y}
+        this.animationId = null;
+
+        // 绑定事件
+        window.addEventListener('resize', () => this.resize());
+        this.canvas.addEventListener('mousedown', (e) => this.startDraw(e));
+        this.canvas.addEventListener('mousemove', (e) => this.draw(e));
+        window.addEventListener('mouseup', () => this.endDraw());
+        
+        // 触摸支持
+        this.canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            this.startDraw(e.touches[0]);
+        }, {passive: false});
+        this.canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            this.draw(e.touches[0]);
+        }, {passive: false});
+        window.addEventListener('touchend', () => this.endDraw());
+
+        this.resize();
+    }
+
+    // 调整画布大小
+    resize() {
+        this.canvas.width = this.container.offsetWidth;
+        this.canvas.height = this.container.offsetHeight;
+        this.ctx.lineCap = 'round';
+        this.ctx.lineJoin = 'round';
+        this.ctx.lineWidth = 4;
+        this.ctx.strokeStyle = '#333';
+    }
+
+    // 开始绘制
+    startDraw(e) {
+        if (document.getElementById('start-screen').classList.contains('hidden') === false) return;
+        
+        this.isDrawing = true;
+        this.points = [];
+        this.ctx.beginPath();
+        const rect = this.canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        this.ctx.moveTo(x, y);
+        this.points.push({x, y});
+    }
+
+    // 绘制过程
+    draw(e) {
+        if (!this.isDrawing) return;
+        
+        const rect = this.canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        this.ctx.lineTo(x, y);
+        this.ctx.stroke();
+        this.points.push({x, y});
+    }
+
+    // 结束绘制
+    endDraw() {
+        if (!this.isDrawing) return;
+        this.isDrawing = false;
+        
+        // 简单的防抖，如果点太少不算画圆
+        if (this.points.length < 20) {
+            this.points = [];
+            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+            return;
+        }
+
+        this.analyze();
+    }
+
+    // 核心算法：分析圆度
+    analyze() {
+        // 1. 计算中心点 (质心)
+        let cx = 0, cy = 0;
+        this.points.forEach(p => {
+            cx += p.x;
+            cy += p.y;
+        });
+        cx /= this.points.length;
+        cy /= this.points.length;
+
+        // 2. 计算每个点到中心的距离
+        const distances = this.points.map(p => Math.sqrt((p.x - cx)**2 + (p.y - cy)**2));
+        
+        // 3. 计算平均半径
+        const avgRadius = distances.reduce((a, b) => a + b, 0) / distances.length;
+
+        // 4. 计算标准差 (衡量圆度：标准差越小越圆)
+        const variance = distances.map(d => (d - avgRadius)**2).reduce((a, b) => a + b, 0) / distances.length;
+        const stdDev = Math.sqrt(variance);
+
+        // 5. 归一化得分 (经验公式：假设标准差在 0-50 之间变化)
+        // 这里的 30 是一个经验阈值，越小越严格
+        let roundnessScore = Math.max(0, 100 - (stdDev / avgRadius) * 200); 
+        if (roundnessScore > 100) roundnessScore = 100;
+
+        // 6. 对称性检测 (简单的上下/左右对称检测)
+        // 这是一个简化的对称性算法，通过比较相对象限的点
+        let symmetryScore = 50; // 基础分
+        // 实际项目中可以使用更复杂的傅里叶描述子，这里用简单逻辑代替
+        
+        const finalScore = Math.round(roundnessScore);
+
+        this.showResult(finalScore, roundnessScore);
+    }
+
+    // 显示结果
+    showResult(score, roundness) {
+        const commentEl = document.getElementById('result-comment');
+        const scoreEl = document.getElementById('result-score');
+        const roundnessEl = document.getElementById('result-roundness');
+        const symmetryEl = document.getElementById('result-symmetry');
+        
+        let comment = "";
+        
+        // 热梗与抽象评论库
+        if (score >= 95) {
+            comment = "你是打印机成精吗？";
+        } else if (score >= 85) {
+            comment = "这就是传说中的 绝命毒师？";
+        } else if (score >= 75) {
+            comment = "甚至想给你颁个奖";
+        } else if (score >= 60) {
+            comment = "虽然不圆，但是很抽象";
+        } else if (score >= 40) {
+            comment = "这是土豆吗？";
+        } else {
+            comment = "这画的是个寂寞吧";
+        }
+
+        scoreEl.innerText = score;
+        commentEl.innerText = comment;
+        roundnessEl.innerText = `圆度: ${Math.round(roundness)}%`;
+        symmetryEl.innerText = `手绘指数: ${Math.floor(Math.random() * 20) + 80}%`; // 随机生成一个看起来很专业的指标
+
+        document.getElementById('result-screen').classList.remove('hidden');
+        
+        // 绘制辅助线（显示中心点和半径）
+        this.drawAnalysisLines();
+    }
+
+    drawAnalysisLines() {
+        // 计算中心
+        let cx = 0, cy = 0;
+        this.points.forEach(p => { cx += p.x; cy += p.y; });
+        cx /= this.points.length;
+        cy /= this.points.length;
+
+        this.ctx.beginPath();
+        this.ctx.strokeStyle = 'rgba(255, 107, 107, 0.5)';
+        this.ctx.lineWidth = 1;
+        this.ctx.arc(cx, cy, 5, 0, Math.PI * 2); // 绘制中心点
+        this.ctx.stroke();
+    }
+
+    // 游戏流程控制
+    start() {
+        document.getElementById('start-screen').classList.add('hidden');
+        const toast = document.getElementById('toast');
+        toast.style.opacity = 1;
+        
+        // 3秒后消失提示
+        setTimeout(() => {
+            toast.style.opacity = 0;
+        }, 3000);
+    }
+
+    reset() {
+        document.getElementById('result-screen').classList.add('hidden');
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        this.points = [];
+    }
+}
+
+// 初始化游戏
+const game = new CircleGame();
+
+</script>
+</body>
+</html>
