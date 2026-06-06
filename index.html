@@ -2,360 +2,449 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>灵魂画手：画圆测试</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, touch-action: manipulation">
+    <title>德军总部 · 伪3D射击</title>
     <style>
-        :root {
-            --bg-color: #fdfbf7;
-            --grid-color: #e0e0e0;
-            --ink-color: #333333;
-            --ui-bg: rgba(255, 255, 255, 0.9);
-            --accent-color: #ff6b6b;
+        :root { --bg: #0a0a14; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: var(--bg); display: flex; justify-content: center; align-items: center;
+            height: 100vh; width: 100vw; overflow: hidden; font-family: system-ui, sans-serif;
+            touch-action: none; user-select: none; -webkit-user-select: none;
         }
-
-        body, html {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-            background-color: var(--bg-color);
-            user-select: none;
-        }
-
-        /* 网格背景 */
-        #canvas-container {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-image: 
-                linear-gradient(var(--grid-color) 1px, transparent 1px),
-                linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
-            background-size: 40px 40px;
-            cursor: crosshair;
-        }
-
-        /* UI 覆盖层 */
-        .ui-layer {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: var(--ui-bg);
-            padding: 40px;
-            border-radius: 20px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-            text-align: center;
-            backdrop-filter: blur(5px);
-            border: 1px solid rgba(255,255,255,0.5);
-            transition: opacity 0.3s ease;
-            z-index: 10;
-            max-width: 400px;
-            width: 90%;
-        }
-
-        h1 {
-            margin: 0 0 10px 0;
-            color: var(--ink-color);
-            font-weight: 300;
-            letter-spacing: 1px;
-        }
-
-        p {
-            color: #666;
-            line-height: 1.6;
-            font-size: 14px;
-        }
-
-        .btn {
-            background: var(--ink-color);
-            color: #fff;
-            border: none;
-            padding: 12px 30px;
-            border-radius: 30px;
-            font-size: 16px;
-            cursor: pointer;
-            margin-top: 20px;
-            transition: transform 0.1s;
-        }
-
-        .btn:active {
-            transform: scale(0.95);
-        }
-
-        .hidden {
-            opacity: 0;
-            pointer-events: none;
-        }
-
-        /* 结果样式 */
-        .score-display {
-            font-size: 48px;
-            font-weight: bold;
-            color: var(--ink-color);
-            margin: 20px 0;
-        }
-
-        .comment {
-            font-size: 18px;
-            font-weight: bold;
-            color: var(--accent-color);
-            margin-bottom: 10px;
-        }
-
-        .detail {
-            font-size: 12px;
-            color: #888;
-            margin-top: 10px;
-            display: flex;
-            justify-content: space-around;
-        }
-
-        /* 顶部提示 */
-        .toast {
-            position: absolute;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0,0,0,0.7);
-            color: white;
-            padding: 10px 20px;
-            border-radius: 20px;
-            font-size: 12px;
-            opacity: 0;
-            transition: opacity 0.5s;
-            pointer-events: none;
-        }
+        canvas { display: block; max-width: 100vw; max-height: 100vh; cursor: none; }
     </style>
 </head>
 <body>
+    <canvas id="gameCanvas"></canvas>
+    <div class="hint" style="position:absolute;bottom:8px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,0.4);font-size:11px;pointer-events:none">🖱️ 点击锁定 | WASD移动 | 鼠标转向 | 左键射击</div>
+    <script>
+        (function() {
+            const canvas = document.getElementById('gameCanvas');
+            const ctx = canvas.getContext('2d');
 
-    <!-- 画布区域 -->
-    <div id="canvas-container">
-        <canvas id="drawCanvas"></canvas>
-    </div>
+            let W, H, centerX, centerY, focalLength;
+            const ASPECT = 16 / 9;
+            function resize() {
+                let w = Math.min(window.innerWidth, 1000), h = w / ASPECT;
+                if (h > window.innerHeight * 0.95) { h = window.innerHeight * 0.95; w = h * ASPECT; }
+                W = Math.floor(w); H = Math.floor(h);
+                canvas.width = W; canvas.height = H;
+                centerX = W / 2; centerY = H / 2;
+                focalLength = W * 0.75;
+            }
+            resize();
+            window.addEventListener('resize', resize);
 
-    <!-- 顶部提示 -->
-    <div id="toast" class="toast">请在上方空白处绘制一个圆</div>
+            const MAP_SIZE = 256;
+            let map = [], walls = [];
+            const WALL_HEIGHT = 5.0;
+            let enemies = [];
+            let healthPacks = []; // ★ 血包
+            const ENEMY_SPEED = 4.0, ENEMY_HEIGHT = 1.8, ENEMY_CHASE_DIST = 16;
+            let enemyImg = new Image();
+            enemyImg.src = 'https://i.mituw.com/imgs/2026/03/15/de4945abb96be550.jpg';
 
-    <!-- 开始界面 -->
-    <div id="start-screen" class="ui-layer">
-        <h1>画圆测试</h1>
-        <p>规则很简单：</p>
-        <p>1. 点击“开始挑战”<br>2. 在画布上画一个圆<br>3. 越圆得分越高</p>
-        <p style="font-size: 12px; color: #999;">* 这是一个测试你“手稳不稳”的游戏</p>
-        <button class="btn" onclick="game.start()">开始挑战</button>
-    </div>
+            function inBounds(x, z) { return x >= 0 && x < MAP_SIZE && z >= 0 && z < MAP_SIZE; }
 
-    <!-- 结果界面 -->
-    <div id="result-screen" class="ui-layer hidden">
-        <h1>绘制完成</h1>
-        <div class="comment" id="result-comment">抽象派大师</div>
-        <div class="score-display" id="result-score">0</div>
-        <div class="detail">
-            <span id="result-roundness">圆度: 0%</span>
-            <span id="result-symmetry">对称: 0%</span>
-        </div>
-        <button class="btn" onclick="game.reset()">再画一次</button>
-    </div>
+            function generateMap() {
+                map = [];
+                for (let i = 0; i < MAP_SIZE; i++) { map[i] = []; for (let j = 0; j < MAP_SIZE; j++) map[i][j] = 1; }
 
-<script>
-/**
- * 游戏逻辑核心
- */
-class CircleGame {
-    constructor() {
-        this.canvas = document.getElementById('drawCanvas');
-        this.ctx = this.canvas.getContext('2d');
-        this.container = document.getElementById('canvas-container');
-        
-        this.isDrawing = false;
-        this.points = []; // 存储绘制的坐标点 {x, y}
-        this.animationId = null;
+                // ★ 更大房间：5-12格
+                let rooms = [];
+                let numRooms = 50 + Math.floor(Math.random() * 21);
+                let maxAttempts = 500;
 
-        // 绑定事件
-        window.addEventListener('resize', () => this.resize());
-        this.canvas.addEventListener('mousedown', (e) => this.startDraw(e));
-        this.canvas.addEventListener('mousemove', (e) => this.draw(e));
-        window.addEventListener('mouseup', () => this.endDraw());
-        
-        // 触摸支持
-        this.canvas.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            this.startDraw(e.touches[0]);
-        }, {passive: false});
-        this.canvas.addEventListener('touchmove', (e) => {
-            e.preventDefault();
-            this.draw(e.touches[0]);
-        }, {passive: false});
-        window.addEventListener('touchend', () => this.endDraw());
+                for (let r = 0; r < numRooms && maxAttempts > 0; r++) {
+                    let rw = 5 + Math.floor(Math.random() * 8);  // 5-12宽
+                    let rh = 5 + Math.floor(Math.random() * 8);  // 5-12高
+                    let rx = 2 + Math.floor(Math.random() * (MAP_SIZE - rw - 4));
+                    let rz = 2 + Math.floor(Math.random() * (MAP_SIZE - rh - 4));
+                    let overlap = false;
+                    for (let i = rx - 3; i < rx + rw + 3 && !overlap; i++)
+                        for (let j = rz - 3; j < rz + rh + 3 && !overlap; j++)
+                            if (inBounds(i, j) && map[i][j] === 0) overlap = true;
+                    if (!overlap) {
+                        rooms.push({ x: rx, z: rz, w: rw, h: rh, cx: rx + rw / 2, cz: rz + rh / 2 });
+                        for (let i = rx; i < rx + rw; i++) for (let j = rz; j < rz + rh; j++) if (inBounds(i, j)) map[i][j] = 0;
+                    } else { maxAttempts--; r--; }
+                }
 
-        this.resize();
-    }
+                if (rooms.length === 0) {
+                    rooms.push({ x: 10, z: 10, w: 10, h: 10, cx: 15, cz: 15 });
+                    for (let i = 10; i < 20; i++) for (let j = 10; j < 20; j++) map[i][j] = 0;
+                }
 
-    // 调整画布大小
-    resize() {
-        this.canvas.width = this.container.offsetWidth;
-        this.canvas.height = this.container.offsetHeight;
-        this.ctx.lineCap = 'round';
-        this.ctx.lineJoin = 'round';
-        this.ctx.lineWidth = 4;
-        this.ctx.strokeStyle = '#333';
-    }
+                // Prim连接（走廊2-3格宽）
+                let connected = [rooms[0]], unconnected = rooms.slice(1);
+                let safety = 0;
+                while (unconnected.length > 0 && safety < rooms.length * 2) {
+                    safety++;
+                    let bestDist = Infinity, bestA = null, bestB = null, bestIdx = -1;
+                    for (let a of connected) {
+                        for (let k = 0; k < unconnected.length; k++) {
+                            let b = unconnected[k];
+                            let dx = a.cx - b.cx, dz = a.cz - b.cz;
+                            let dist = dx*dx + dz*dz;
+                            if (dist < bestDist) { bestDist = dist; bestA = a; bestB = b; bestIdx = k; }
+                        }
+                    }
+                    if (bestB && bestA) {
+                        let cx1 = Math.floor(bestA.cx), cz1 = Math.floor(bestA.cz);
+                        let cx2 = Math.floor(bestB.cx), cz2 = Math.floor(bestB.cz);
+                        let cw = 2 + Math.floor(Math.random() * 2);
+                        let minX = Math.min(cx1, cx2), maxX = Math.max(cx1, cx2);
+                        for (let x = minX; x <= maxX && x < MAP_SIZE; x++) {
+                            if (x < 0 || !map[x]) continue;
+                            for (let w = 0; w < cw; w++) { let zz = cz1 + w; if (inBounds(x, zz)) map[x][zz] = 0; }
+                        }
+                        let minZ = Math.min(cz1, cz2), maxZ = Math.max(cz1, cz2);
+                        for (let z = minZ; z <= maxZ && z < MAP_SIZE; z++) {
+                            for (let w = 0; w < cw; w++) { let xx = cx2 + w; if (inBounds(xx, z)) map[xx][z] = 0; }
+                        }
+                        connected.push(bestB);
+                        unconnected.splice(bestIdx, 1);
+                    } else { break; }
+                }
 
-    // 开始绘制
-    startDraw(e) {
-        if (document.getElementById('start-screen').classList.contains('hidden') === false) return;
-        
-        this.isDrawing = true;
-        this.points = [];
-        this.ctx.beginPath();
-        const rect = this.canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        
-        this.ctx.moveTo(x, y);
-        this.points.push({x, y});
-    }
+                walls = [];
+                const colors = ['#8b7355','#7d8a7a','#9e8c7b','#a09080','#b0a090','#c0b0a0','#6b8c9e','#8a7d6b','#7a6b5a','#9d8b7b'];
+                for (let x = 0; x < MAP_SIZE; x++) for (let z = 0; z < MAP_SIZE; z++) if (map[x][z] === 1) {
+                    let col = colors[(x * 7 + z * 13) % colors.length];
+                    if (x > 0 && map[x-1][z] === 0) walls.push({ x1:x,z1:z,x2:x,z2:z+1,h:WALL_HEIGHT,color:col });
+                    if (x < MAP_SIZE-1 && map[x+1][z] === 0) walls.push({ x1:x+1,z1:z,x2:x+1,z2:z+1,h:WALL_HEIGHT,color:col });
+                    if (z > 0 && map[x][z-1] === 0) walls.push({ x1:x,z1:z,x2:x+1,z2:z,h:WALL_HEIGHT,color:col });
+                    if (z < MAP_SIZE-1 && map[x][z+1] === 0) walls.push({ x1:x,z1:z+1,x2:x+1,z2:z+1,h:WALL_HEIGHT,color:col });
+                }
 
-    // 绘制过程
-    draw(e) {
-        if (!this.isDrawing) return;
-        
-        const rect = this.canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
+                player.x = rooms[0].cx; player.z = rooms[0].cz; player.angle = 0;
 
-        this.ctx.lineTo(x, y);
-        this.ctx.stroke();
-        this.points.push({x, y});
-    }
+                enemies = [];
+                healthPacks = [];
+                for (let i = 1; i < rooms.length; i++) {
+                    let r = rooms[i];
+                    let count = 1 + Math.floor(Math.random() * 3);
+                    for (let c = 0; c < count; c++) {
+                        enemies.push({
+                            x: r.x + 1 + Math.random() * (r.w - 2),
+                            z: r.z + 1 + Math.random() * (r.h - 2),
+                            alive: true, deadTimer: 0,
+                            dodgeTimer: 0, dodgeDir: 0, rushTimer: 0,
+                            wanderAngle: Math.random() * Math.PI * 2,  // ★ 随机待机方向
+                            wanderTimer: 1 + Math.random() * 3         // ★ 方向变化计时器
+                        });
+                    }
+                    // ★ 30%概率生成血包
+                    if (Math.random() < 0.3) {
+                        healthPacks.push({
+                            x: r.x + 1 + Math.random() * (r.w - 2),
+                            z: r.z + 1 + Math.random() * (r.h - 2),
+                            alive: true
+                        });
+                    }
+                }
+                // 走廊也放一些血包
+                for (let k = 0; k < 8; k++) {
+                    let hx = 5 + Math.random() * (MAP_SIZE - 10);
+                    let hz = 5 + Math.random() * (MAP_SIZE - 10);
+                    if (inBounds(Math.floor(hx), Math.floor(hz)) && map[Math.floor(hx)][Math.floor(hz)] === 0) {
+                        healthPacks.push({ x: hx, z: hz, alive: true });
+                    }
+                }
 
-    // 结束绘制
-    endDraw() {
-        if (!this.isDrawing) return;
-        this.isDrawing = false;
-        
-        // 简单的防抖，如果点太少不算画圆
-        if (this.points.length < 20) {
-            this.points = [];
-            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-            return;
-        }
+                console.log('房间:'+rooms.length+' 墙:'+walls.length+' 敌人:'+enemies.length+' 血包:'+healthPacks.length);
+            }
 
-        this.analyze();
-    }
+            const player = { x: 0, z: 0, angle: 0, eyeHeight: 1.6, health: 100, score: 0 };
+            const moveSpeed = 5.5;
+            let bulletHoles = [];
+            let gunRecoil = 0, gunFlash = 0, shootCooldown = 0;
+            let screenShake = 0;
 
-    // 核心算法：分析圆度
-    analyze() {
-        // 1. 计算中心点 (质心)
-        let cx = 0, cy = 0;
-        this.points.forEach(p => {
-            cx += p.x;
-            cy += p.y;
-        });
-        cx /= this.points.length;
-        cy /= this.points.length;
+            const input = { forward: false, backward: false, left: false, right: false, shoot: false };
+            let mouseDX = 0;
 
-        // 2. 计算每个点到中心的距离
-        const distances = this.points.map(p => Math.sqrt((p.x - cx)**2 + (p.y - cy)**2));
-        
-        // 3. 计算平均半径
-        const avgRadius = distances.reduce((a, b) => a + b, 0) / distances.length;
+            window.addEventListener('keydown', (e) => {
+                switch (e.key.toLowerCase()) {
+                    case 'w': input.forward = true; e.preventDefault(); break;
+                    case 's': input.backward = true; e.preventDefault(); break;
+                    case 'a': input.left = true; e.preventDefault(); break;
+                    case 'd': input.right = true; e.preventDefault(); break;
+                }
+            });
+            window.addEventListener('keyup', (e) => {
+                switch (e.key.toLowerCase()) {
+                    case 'w': input.forward = false; e.preventDefault(); break;
+                    case 's': input.backward = false; e.preventDefault(); break;
+                    case 'a': input.left = false; e.preventDefault(); break;
+                    case 'd': input.right = false; e.preventDefault(); break;
+                }
+            });
 
-        // 4. 计算标准差 (衡量圆度：标准差越小越圆)
-        const variance = distances.map(d => (d - avgRadius)**2).reduce((a, b) => a + b, 0) / distances.length;
-        const stdDev = Math.sqrt(variance);
+            canvas.addEventListener('click', () => canvas.requestPointerLock());
+            document.addEventListener('pointerlockchange', () => {
+                document.querySelector('.hint').style.display = document.pointerLockElement === canvas ? 'none' : 'block';
+            });
+            document.addEventListener('mousemove', (e) => {
+                if (document.pointerLockElement === canvas) mouseDX += e.movementX;
+            });
+            canvas.addEventListener('mousedown', (e) => { if (e.button === 0) input.shoot = true; });
+            canvas.addEventListener('mouseup', () => { input.shoot = false; });
 
-        // 5. 归一化得分 (经验公式：假设标准差在 0-50 之间变化)
-        // 这里的 30 是一个经验阈值，越小越严格
-        let roundnessScore = Math.max(0, 100 - (stdDev / avgRadius) * 200); 
-        if (roundnessScore > 100) roundnessScore = 100;
+            let touchLookX = null, touchMoveId = null, moveBase = null;
+            canvas.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                for (let t of e.changedTouches) {
+                    const rect = canvas.getBoundingClientRect();
+                    const cx = (t.clientX - rect.left) * (canvas.width / rect.width);
+                    if (cx < canvas.width * 0.5 && touchMoveId === null) { touchMoveId = t.identifier; moveBase = { x: cx, y: (t.clientY - rect.top) * (canvas.height / rect.height) }; }
+                    else if (cx >= canvas.width * 0.5 && touchLookX === null) { touchLookX = t.clientX; input.shoot = true; }
+                }
+            }, { passive: false });
+            canvas.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                input.forward = input.backward = input.left = input.right = false;
+                for (let t of e.touches) {
+                    const rect = canvas.getBoundingClientRect();
+                    const cx = (t.clientX - rect.left) * (canvas.width / rect.width), cy = (t.clientY - rect.top) * (canvas.height / rect.height);
+                    if (t.identifier === touchMoveId && moveBase) { let dx = cx - moveBase.x, dy = cy - moveBase.y; if (dy < -15) input.forward = true; if (dy > 15) input.backward = true; if (dx < -15) input.left = true; if (dx > 15) input.right = true; }
+                    if (t.identifier !== touchMoveId && touchLookX !== null) { player.angle += (t.clientX - touchLookX) * 0.008; touchLookX = t.clientX; }
+                }
+            }, { passive: false });
+            canvas.addEventListener('touchend', (e) => {
+                for (let t of e.changedTouches) { if (t.identifier === touchMoveId) { touchMoveId = null; moveBase = null; input.forward = input.backward = input.left = input.right = false; } if (touchLookX !== null) { touchLookX = null; input.shoot = false; } }
+            });
 
-        // 6. 对称性检测 (简单的上下/左右对称检测)
-        // 这是一个简化的对称性算法，通过比较相对象限的点
-        let symmetryScore = 50; // 基础分
-        // 实际项目中可以使用更复杂的傅里叶描述子，这里用简单逻辑代替
-        
-        const finalScore = Math.round(roundnessScore);
+            function isWallAt(wx, wz, r) {
+                r = r || 0.25;
+                for (let c of [[wx-r,wz-r],[wx+r,wz-r],[wx-r,wz+r],[wx+r,wz+r]]) {
+                    let ix = Math.floor(c[0]), iz = Math.floor(c[1]);
+                    if (!inBounds(ix, iz) || map[ix][iz] === 1) return true;
+                }
+                return false;
+            }
 
-        this.showResult(finalScore, roundnessScore);
-    }
+            function checkEnemyHit() {
+                let fx = Math.sin(player.angle), fz = -Math.cos(player.angle);
+                for (let d = 0; d < 40; d += 0.25) {
+                    let wx = player.x + fx * d, wz = player.z + fz * d;
+                    if (!inBounds(Math.floor(wx), Math.floor(wz)) || map[Math.floor(wx)][Math.floor(wz)] === 1) return;
+                    for (let e of enemies) { if (!e.alive) continue; let dx = wx - e.x, dz = wz - e.z; if (Math.sqrt(dx*dx+dz*dz) < 0.5) { e.alive = false; e.deadTimer = 1.5; player.score += 100; screenShake = 0.08; return; } }
+                }
+            }
 
-    // 显示结果
-    showResult(score, roundness) {
-        const commentEl = document.getElementById('result-comment');
-        const scoreEl = document.getElementById('result-score');
-        const roundnessEl = document.getElementById('result-roundness');
-        const symmetryEl = document.getElementById('result-symmetry');
-        
-        let comment = "";
-        
-        // 热梗与抽象评论库
-        if (score >= 95) {
-            comment = "你是打印机成精吗？";
-        } else if (score >= 85) {
-            comment = "这就是传说中的 绝命毒师？";
-        } else if (score >= 75) {
-            comment = "甚至想给你颁个奖";
-        } else if (score >= 60) {
-            comment = "虽然不圆，但是很抽象";
-        } else if (score >= 40) {
-            comment = "这是土豆吗？";
-        } else {
-            comment = "这画的是个寂寞吧";
-        }
+            function shoot() {
+                if (shootCooldown > 0) return;
+                shootCooldown = 0.5; gunRecoil = 1.0; gunFlash = 0.12;
+                checkEnemyHit();
+                let fx = Math.sin(player.angle), fz = -Math.cos(player.angle);
+                for (let d = 0; d < 40; d += 0.25) {
+                    let wx = player.x + fx * d, wz = player.z + fz * d;
+                    let ix = Math.floor(wx), iz = Math.floor(wz);
+                    if (inBounds(ix, iz) && map[ix][iz] === 1) {
+                        let rfx = wx - ix, rfz = wz - iz, dir = 'n';
+                        if (rfx < 0.15) dir = 'w'; else if (rfx > 0.85) dir = 'e'; else if (rfz < 0.15) dir = 'n'; else if (rfz > 0.85) dir = 's';
+                        bulletHoles.push({ x: ix, z: iz, dir: dir, life: 300 }); if (bulletHoles.length > 100) bulletHoles.shift(); return;
+                    }
+                }
+            }
 
-        scoreEl.innerText = score;
-        commentEl.innerText = comment;
-        roundnessEl.innerText = `圆度: ${Math.round(roundness)}%`;
-        symmetryEl.innerText = `手绘指数: ${Math.floor(Math.random() * 20) + 80}%`; // 随机生成一个看起来很专业的指标
+            function updateEnemies(dt) {
+                for (let e of enemies) {
+                    if (e.deadTimer > 0) { e.deadTimer -= dt; continue; }
+                    if (!e.alive) continue;
+                    let dx = player.x - e.x, dz = player.z - e.z, dist = Math.sqrt(dx*dx+dz*dz);
 
-        document.getElementById('result-screen').classList.remove('hidden');
-        
-        // 绘制辅助线（显示中心点和半径）
-        this.drawAnalysisLines();
-    }
+                    if (dist < ENEMY_CHASE_DIST && dist > 0.8) {
+                        // ★ 追击模式
+                        let s = ENEMY_SPEED * dt;
+                        if (e.dodgeTimer > 0) { e.dodgeTimer -= dt; let perpX = -dz/dist, perpZ = dx/dist; let nx = e.x + perpX * e.dodgeDir * s * 2.5; let nz = e.z + perpZ * e.dodgeDir * s * 2.5; if (!isWallAt(nx, e.z, 0.3)) e.x = nx; if (!isWallAt(e.x, nz, 0.3)) e.z = nz; }
+                        else if (dist < 6 && Math.random() < 0.03) { e.dodgeTimer = 0.2 + Math.random() * 0.4; e.dodgeDir = Math.random() > 0.5 ? 1 : -1; e.rushTimer = 0.5; }
+                        let spd = s * (e.rushTimer > 0 ? 1.8 : 1.0); if (e.rushTimer > 0) e.rushTimer -= dt;
+                        let nx = e.x + (dx/dist)*spd; let nz = e.z + (dz/dist)*spd;
+                        if (!isWallAt(nx, e.z, 0.3)) e.x = nx; if (!isWallAt(e.x, nz, 0.3)) e.z = nz;
+                    } else if (dist >= ENEMY_CHASE_DIST) {
+                        // ★ 待机模式：缓慢随机移动，方向缓慢变化
+                        e.wanderTimer -= dt;
+                        if (e.wanderTimer <= 0) {
+                            e.wanderAngle += (Math.random() - 0.5) * 1.0; // 方向缓慢变化（±0.5弧度）
+                            e.wanderTimer = 2 + Math.random() * 3;
+                        }
+                        let ws = 1.5 * dt; // 慢速
+                        let nx = e.x + Math.sin(e.wanderAngle) * ws;
+                        let nz = e.z + Math.cos(e.wanderAngle) * ws;
+                        if (!isWallAt(nx, e.z, 0.3)) e.x = nx;
+                        if (!isWallAt(e.x, nz, 0.3)) e.z = nz;
+                    }
+                    if (dist < 0.8) { player.health -= 30 * dt; screenShake = Math.max(screenShake, 0.05); }
+                }
+                if (player.health < 0) player.health = 0;
+            }
 
-    drawAnalysisLines() {
-        // 计算中心
-        let cx = 0, cy = 0;
-        this.points.forEach(p => { cx += p.x; cy += p.y; });
-        cx /= this.points.length;
-        cy /= this.points.length;
+            // ★ 检查拾取血包
+            function checkHealthPacks() {
+                for (let h of healthPacks) {
+                    if (!h.alive) continue;
+                    let dx = player.x - h.x, dz = player.z - h.z;
+                    if (Math.sqrt(dx*dx+dz*dz) < 0.8) {
+                        h.alive = false;
+                        player.health = Math.min(100, player.health + 25);
+                    }
+                }
+            }
 
-        this.ctx.beginPath();
-        this.ctx.strokeStyle = 'rgba(255, 107, 107, 0.5)';
-        this.ctx.lineWidth = 1;
-        this.ctx.arc(cx, cy, 5, 0, Math.PI * 2); // 绘制中心点
-        this.ctx.stroke();
-    }
+            function updatePlayer(dt) {
+                player.angle += mouseDX * 0.004; mouseDX = 0;
+                if (gunRecoil > 0) gunRecoil = Math.max(0, gunRecoil - dt * 8);
+                if (gunFlash > 0) gunFlash = Math.max(0, gunFlash - dt);
+                if (shootCooldown > 0) shootCooldown = Math.max(0, shootCooldown - dt);
+                if (screenShake > 0) screenShake = Math.max(0, screenShake - dt);
+                let fx = Math.sin(player.angle), fz = -Math.cos(player.angle);
+                let rx = Math.cos(player.angle), rz = Math.sin(player.angle);
+                let mx = 0, mz = 0;
+                if (input.forward) { mx += fx; mz += fz; } if (input.backward) { mx -= fx; mz -= fz; }
+                if (input.left) { mx -= rx; mz -= rz; } if (input.right) { mx += rx; mz += rz; }
+                let len = Math.sqrt(mx*mx+mz*mz);
+                if (len > 0) { mx = mx/len * moveSpeed * dt; mz = mz/len * moveSpeed * dt; }
+                if (!isWallAt(player.x+mx, player.z+mz, 0.3)) { player.x += mx; player.z += mz; }
+                else if (!isWallAt(player.x+mx, player.z, 0.3)) player.x += mx;
+                else if (!isWallAt(player.x, player.z+mz, 0.3)) player.z += mz;
+                if (input.shoot) { shoot(); input.shoot = false; }
+                for (let i = bulletHoles.length-1; i >= 0; i--) { bulletHoles[i].life--; if (bulletHoles[i].life <= 0) bulletHoles.splice(i,1); }
+                updateEnemies(dt);
+                checkHealthPacks();
+            }
 
-    // 游戏流程控制
-    start() {
-        document.getElementById('start-screen').classList.add('hidden');
-        const toast = document.getElementById('toast');
-        toast.style.opacity = 1;
-        
-        // 3秒后消失提示
-        setTimeout(() => {
-            toast.style.opacity = 0;
-        }, 3000);
-    }
+            function project(wx, wy, wz) {
+                let dx = wx - player.x, dz = wz - player.z;
+                let s = Math.sin(player.angle), c = Math.cos(player.angle);
+                let camX = dx*c + dz*s, camZ = dx*s - dz*c, camY = wy - player.eyeHeight;
+                if (camZ <= 0.01) return null;
+                return { x: centerX + (camX/camZ)*focalLength, y: centerY - (camY/camZ)*focalLength, z: camZ };
+            }
 
-    reset() {
-        document.getElementById('result-screen').classList.add('hidden');
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        this.points = [];
-    }
-}
+            function ab(hex, f) {
+                let n = parseInt(hex.slice(1),16);
+                return `rgb(${Math.min(255,Math.max(0,Math.floor(((n>>16)&0xff)*f)))},${Math.min(255,Math.max(0,Math.floor(((n>>8)&0xff)*f)))},${Math.min(255,Math.max(0,Math.floor((n&0xff)*f)))})`;
+            }
 
-// 初始化游戏
-const game = new CircleGame();
+            function drawWall(w1,w2,h,color,bri) {
+                let p1=project(w1.x,0,w1.z),p2=project(w2.x,0,w2.z);
+                if(!p1||!p2)return;
+                let t1=project(w1.x,h,w1.z),t2=project(w2.x,h,w2.z);
+                if(!t1||!t2)return;
+                ctx.fillStyle=ab(color,bri);
+                ctx.beginPath();ctx.moveTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);ctx.lineTo(t2.x,t2.y);ctx.lineTo(t1.x,t1.y);ctx.closePath();ctx.fill();
+            }
 
-</script>
+            function drawEnemy(e) {
+                if(!enemyImg.complete) return;
+                if(e.deadTimer > 0) { let alpha = e.deadTimer / 1.5; let p = project(e.x, 0, e.z); if(!p || p.z <= 0.1) return; let size = (focalLength * 0.4) / p.z * alpha; ctx.globalAlpha = alpha; ctx.fillStyle = '#f00'; ctx.fillRect(p.x - size/2, p.y - size, size, size); ctx.globalAlpha = 1; return; }
+                if(!e.alive) return;
+                let p = project(e.x, 0, e.z); if(!p || p.z <= 0.1) return;
+                let t = project(e.x, ENEMY_HEIGHT, e.z); if(!t) return;
+                let size = (focalLength * 0.55) / p.z; let half = size / 2, bodyW = size * 0.6;
+                ctx.fillStyle = '#8b0000'; ctx.fillRect(p.x - bodyW/2, t.y, bodyW, p.y - t.y - size * 0.3);
+                ctx.drawImage(enemyImg, p.x - half, t.y - size, size, size);
+                ctx.strokeStyle = '#600'; ctx.lineWidth = Math.max(1, size * 0.08);
+                ctx.beginPath(); ctx.moveTo(p.x - bodyW*0.7, t.y + size*0.1); ctx.lineTo(p.x - bodyW*0.7, p.y - size*0.4); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(p.x + bodyW*0.7, t.y + size*0.1); ctx.lineTo(p.x + bodyW*0.7, p.y - size*0.4); ctx.stroke();
+            }
+
+            // ★ 绘制血包
+            function drawHealthPack(h) {
+                if (!h.alive) return;
+                let p = project(h.x, 0.3, h.z);
+                if (!p || p.z <= 0.1) return;
+                let size = (focalLength * 0.25) / p.z;
+                let half = size / 2;
+                // 白色底
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(p.x - half, p.y - size, size, size);
+                // 红色十字
+                ctx.fillStyle = '#e00';
+                let barW = size * 0.3, barH = size * 0.8;
+                ctx.fillRect(p.x - barW/2, p.y - size * 0.9, barW, barH);  // 竖
+                ctx.fillRect(p.x - barH/2, p.y - size * 0.55, barH, barW); // 横
+            }
+
+            function drawGun3D() {
+                let rec = gunRecoil * 25;
+                let mx = centerX, my = centerY + 40 - rec;
+                let gx = W - 40, gy = H + 10;
+                ctx.save();
+                let mw = 14, gw = 35;
+                let dx = gx - mx, dy = gy - my, len = Math.sqrt(dx*dx+dy*dy);
+                let nx = dx/len, ny = dy/len, px = -ny, py = nx;
+                let m1x = mx+px*mw, m1y = my+py*mw, m2x = mx-px*mw, m2y = my-py*mw;
+                let g1x = gx+px*gw, g1y = gy+py*gw, g2x = gx-px*gw, g2y = gy-py*gw;
+                ctx.fillStyle='#3a3a3a';
+                ctx.beginPath();ctx.moveTo(m1x,m1y);ctx.lineTo(m2x,m2y);ctx.lineTo(g2x,g2y);ctx.lineTo(g1x,g1y);ctx.closePath();ctx.fill();
+                let hmw=3,hgw=8; ctx.fillStyle='#4a4a4a'; ctx.beginPath();ctx.moveTo(mx+px*hmw,my+py*hmw);ctx.lineTo(mx-px*hmw,my-py*hmw);ctx.lineTo(gx-px*hgw,gy-py*hgw);ctx.lineTo(gx+px*hgw,gy+py*hgw);ctx.closePath();ctx.fill();
+                let gExt=45,ggx=gx+nx*gExt,ggy=gy+ny*gExt; ctx.fillStyle='#5a3a20'; ctx.beginPath();ctx.moveTo(g1x,g1y);ctx.lineTo(g2x,g2y);ctx.lineTo(g2x+nx*gExt,g2y+ny*gExt);ctx.lineTo(g1x+nx*gExt,g1y+ny*gExt);ctx.closePath();ctx.fill();
+                ctx.strokeStyle='#4a2a10';ctx.lineWidth=1.5; for(let i=0;i<5;i++){let t=0.3+i*0.15,sx=gx+nx*t*gExt,sy=gy+ny*t*gExt;ctx.beginPath();ctx.moveTo(sx+px*gw*0.8,sy+py*gw*0.8);ctx.lineTo(sx-px*gw*0.8,sy-py*gw*0.8);ctx.stroke();}
+                ctx.fillStyle='#555';ctx.fillRect(mx-2,my-10,4,12);
+                if(gunFlash>0){let fa=gunFlash/0.12,fx=mx-nx*5,fy=my-ny*5;ctx.fillStyle='rgba(255,200,50,'+fa+')';ctx.beginPath();ctx.arc(fx,fy,16+Math.random()*8,0,Math.PI*2);ctx.fill();ctx.fillStyle='rgba(255,255,200,'+fa+')';ctx.beginPath();ctx.arc(fx,fy,8+Math.random()*4,0,Math.PI*2);ctx.fill();ctx.fillStyle='rgba(255,255,255,'+fa+')';ctx.beginPath();ctx.arc(fx,fy,3,0,Math.PI*2);ctx.fill();ctx.strokeStyle='rgba(255,200,50,'+fa+')';ctx.lineWidth=2;for(let i=0;i<4;i++){let a=Math.random()*Math.PI*2,l=8+Math.random()*12;ctx.beginPath();ctx.moveTo(fx,fy);ctx.lineTo(fx+Math.cos(a)*l,fy+Math.sin(a)*l);ctx.stroke();}}
+                ctx.restore();
+            }
+
+            function render() {
+                let sx = 0, sy = 0; if (screenShake > 0) { sx = (Math.random() - 0.5) * screenShake * 50; sy = (Math.random() - 0.5) * screenShake * 50; }
+                ctx.save(); ctx.translate(sx, sy);
+
+                let gs = ctx.createLinearGradient(0, 0, 0, H); gs.addColorStop(0, '#0a0a1e'); gs.addColorStop(0.4, '#1a2a3a'); gs.addColorStop(1, '#0a0a0a');
+                ctx.fillStyle = gs; ctx.fillRect(-10, -10, W+20, H+20);
+                let fog = ctx.createLinearGradient(0, centerY * 0.7, 0, H); fog.addColorStop(0, 'rgba(10,10,20,0)'); fog.addColorStop(0.3, 'rgba(10,10,20,0.3)'); fog.addColorStop(1, 'rgba(5,5,10,0.7)');
+                ctx.fillStyle = fog; ctx.fillRect(0, centerY * 0.7, W, H);
+
+                let visible = [];
+                for (let w of walls) { let dx = (w.x1+w.x2)/2 - player.x, dz = (w.z1+w.z2)/2 - player.z; let s = Math.sin(player.angle), c = Math.cos(player.angle); let camZ = dx*s - dz*c; if (camZ <= 0.05) continue; visible.push({ type: 'wall', w: w, z: camZ }); }
+                for (let e of enemies) { if (!e.alive && e.deadTimer <= 0) continue; let dx = e.x - player.x, dz = e.z - player.z; let s = Math.sin(player.angle), c = Math.cos(player.angle); let camZ = dx*s - dz*c; if (camZ <= 0.1) continue; visible.push({ type: 'enemy', e: e, z: camZ }); }
+                for (let h of healthPacks) { if (!h.alive) continue; let dx = h.x - player.x, dz = h.z - player.z; let s = Math.sin(player.angle), c = Math.cos(player.angle); let camZ = dx*s - dz*c; if (camZ <= 0.1) continue; visible.push({ type: 'health', h: h, z: camZ }); }
+                visible.sort((a, b) => b.z - a.z);
+
+                for (let v of visible) {
+                    if (v.type === 'wall') { let w = v.w; drawWall({x:w.x1,z:w.z1},{x:w.x2,z:w.z2},w.h,w.color,Math.max(0.25,1.0-v.z/80)); }
+                    else if (v.type === 'enemy') drawEnemy(v.e);
+                    else if (v.type === 'health') drawHealthPack(v.h);
+                }
+
+                for (let bh of bulletHoles) { let wx = bh.x+0.5, wz = bh.z+0.5; if (bh.dir==='w') wx=bh.x+0.05; if (bh.dir==='e') wx=bh.x+0.95; if (bh.dir==='n') wz=bh.z+0.05; if (bh.dir==='s') wz=bh.z+0.95; let p = project(wx, 1.0, wz); if (p && p.x>0 && p.x<W && p.y>0 && p.y<H) { ctx.fillStyle='#111';ctx.beginPath();ctx.arc(p.x,p.y,4,0,Math.PI*2);ctx.fill();ctx.fillStyle='#333';ctx.beginPath();ctx.arc(p.x,p.y,2,0,Math.PI*2);ctx.fill(); } }
+
+                drawGun3D(); ctx.restore();
+
+                ctx.strokeStyle='rgba(255,255,255,0.6)';ctx.lineWidth=1;
+                ctx.beginPath();ctx.moveTo(centerX-12,centerY);ctx.lineTo(centerX-5,centerY);ctx.stroke();
+                ctx.beginPath();ctx.moveTo(centerX+5,centerY);ctx.lineTo(centerX+12,centerY);ctx.stroke();
+                ctx.beginPath();ctx.moveTo(centerX,centerY-12);ctx.lineTo(centerX,centerY-5);ctx.stroke();
+                ctx.beginPath();ctx.moveTo(centerX,centerY+5);ctx.lineTo(centerX,centerY+12);ctx.stroke();
+
+                let hpW=200,hpH=16,hpX=10,hpY=H-30;
+                ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(hpX-1,hpY-1,hpW+2,hpH+2);
+                ctx.fillStyle='#600';ctx.fillRect(hpX,hpY,hpW,hpH);
+                let hpPct = player.health / 100; let hpColor = hpPct > 0.5 ? '#0f0' : hpPct > 0.25 ? '#ff0' : '#f00';
+                ctx.fillStyle=hpColor;ctx.fillRect(hpX,hpY,hpW*hpPct,hpH);
+                ctx.fillStyle='#fff';ctx.font='bold 11px system-ui';
+                ctx.fillText('HP: '+Math.ceil(player.health),hpX+4,hpY+11); ctx.fillText('分数: '+player.score,hpX+4,hpY-6);
+                let aliveCount = enemies.filter(e=>e.alive).length; ctx.fillText('敌人: '+aliveCount,hpX+hpW-50,hpY-6);
+                if(aliveCount===0){ctx.fillStyle='#0f0';ctx.font='bold 28px system-ui';ctx.textAlign='center';ctx.fillText('🎉 全部消灭！刷新再来一局',centerX,centerY-40);}
+                if(shootCooldown>0){ctx.fillStyle='rgba(255,255,255,0.5)';ctx.font='11px system-ui';ctx.fillText('装弹中...',hpX+hpW-55,hpY+11);}
+
+                if(document.pointerLockElement!==canvas){
+                    ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(0,0,W,H); ctx.fillStyle='#fff';ctx.font='bold 18px system-ui';ctx.textAlign='center';
+                    ctx.fillText('🖱️ 点击屏幕开始游戏',centerX,centerY-10); ctx.font='13px system-ui';ctx.fillStyle='rgba(255,255,255,0.6)';
+                    ctx.fillText('W前进 S后退 A左移 D右移 | 鼠标转向 | 左键射击',centerX,centerY+25);
+                }
+                if(player.health<=0){ ctx.fillStyle='rgba(0,0,0,0.8)';ctx.fillRect(0,0,W,H); ctx.fillStyle='#f00';ctx.font='bold 36px system-ui';ctx.textAlign='center'; ctx.fillText('💀 你死了',centerX,centerY-20); ctx.fillStyle='#fff';ctx.font='16px system-ui'; ctx.fillText('得分: '+player.score+' | 刷新页面重新开始',centerX,centerY+20); }
+            }
+
+            let lastTime = performance.now();
+            function gameLoop(now) { let dt = Math.min((now - lastTime) / 1000, 0.1); lastTime = now; if (player.health > 0) updatePlayer(dt); render(); requestAnimationFrame(gameLoop); }
+
+            generateMap();
+            requestAnimationFrame(gameLoop);
+        })();
+    </script>
 </body>
 </html>
